@@ -124,13 +124,21 @@ jobs:
       if: (!cancelled())
       run: df -hT
 
+    # 👇 关键修复：自动匹配 manifest 文件，不再强制指定名称
     - name: Organize Files(整理文件)
       if: steps.compile.outputs.status == 'success'
       run: |
         cd $OPENWRT_PATH/bin/targets/*/*
         cp $OPENWRT_PATH/.config IPQ60XX.config
         mv config.buildinfo IPQ60XX.config.buildinfo
-        mv libwrt-qualcommax-ipq60xx.manifest IPQ60XX.manifest
+        # 自动查找 manifest 文件并重命名，避免因名称变化而失败
+        MANIFEST_FILE=$(ls *.manifest 2>/dev/null | head -1)
+        if [ -n "$MANIFEST_FILE" ]; then
+          mv "$MANIFEST_FILE" IPQ60XX.manifest
+        else
+          echo "::warning::未找到 manifest 文件，创建一个空文件代替"
+          touch IPQ60XX.manifest
+        fi
         mv -f $OPENWRT_PATH/bin/packages/*/*/*.apk packages
         tar -zcf IPQ60XX.Packages.tar.gz packages
         rm -rf packages feeds.buildinfo version.buildinfo sha256sums profiles.json
@@ -161,11 +169,9 @@ jobs:
 
     - name: Delete Old Cache(删除旧缓存)
       run: |
-        # 获取缓存列表并删除
         gh cache list --key ${{ env.SOURCE_REPO }}-${{ env.REPO_BRANCH }}-${{ env.DEVICE_TARGET }}-${{ env.DEVICE_SUBTARGET }}- --json key --jq '.[] | .key' | while read -r key; do
           gh cache delete "$key"
         done
-        # 输出缓存状态
         echo "========cache status========"
         echo "ccache: $(du -sh $OPENWRT_PATH/.ccache | cut -f 1)"
         echo "staging: $(du -sh $OPENWRT_PATH/staging_dir | cut -f 1)"
